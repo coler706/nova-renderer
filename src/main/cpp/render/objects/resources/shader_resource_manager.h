@@ -30,9 +30,10 @@ namespace nova {
 
         void create_descriptor_pool(uint32_t num_sets, uint32_t num_buffers, uint32_t num_textures);
 
-        void create_descriptor_sets(std::unordered_map<std::string, std::vector<pipeline_object>>& pipelines);
+        void create_descriptor_sets(const std::unordered_map<std::string, std::vector<pipeline_object>>& pipelines,
+                                            std::unordered_map<std::string, std::vector<material_pass>>& material_passes);
 
-        void create_descriptor_sets_for_pipeline(pipeline_object& pipeline_data);
+        std::vector<vk::DescriptorSet> create_descriptor_sets_for_pipeline(const pipeline_object& pipeline_data);
 
         vk::DescriptorSet create_model_matrix_descriptor();
 
@@ -47,6 +48,19 @@ namespace nova {
         texture_manager& get_texture_manager();
 
         uniform_buffer_store& get_uniform_buffers();
+
+        /*
+         * Something higher-level
+         */
+
+        /*!
+         * \brief Updates all the descriptor sets belonging to the provided material
+         *
+         * The intended use case is updating a material's descriptor sets when the material is just loaded, but this
+         * method will work fine if you need to change what's bound to a material in the middle of a frame - which might
+         * happen, depending on what the scripting allows
+         */
+        void update_all_descriptor_sets(const material_pass &mat, const std::unordered_map<std::string, resource_binding> &name_to_descriptor);
 
     private:
         vk::Device device;

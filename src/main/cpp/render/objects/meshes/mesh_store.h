@@ -29,7 +29,7 @@ namespace nova {
     public:
         mesh_store(std::shared_ptr<render_context> context, std::shared_ptr<shader_resource_manager> shader_resources);
 
-        void add_gui_buffers(mc_gui_geometry* command);
+        void add_gui_buffers(const char *geo_type, mc_gui_geometry *command);
 
         /*!
          * \brief Adds a chunk to the mesh store if the chunk doesn't exist, or replaces the chunks if it does exist
@@ -37,6 +37,8 @@ namespace nova {
          * \param chunk The chunk to add or update
          */
         void add_chunk_render_object(std::string filter_name, mc_chunk_render_object &chunk);
+
+        void add_fullscreen_quad_for_material(const std::string& material_name);
 
         /*!
          * \brief Retrieves the list of meshes that the shader with the provided name should render
@@ -77,11 +79,11 @@ namespace nova {
         std::unordered_map<std::string, std::vector<render_object>> renderables_grouped_by_material;
         std::vector<render_object> default_vector;
 
-        std::mutex chunk_parts_to_upload_lock;
+        std::mutex geometry_to_upload_lock;
         /*!
          * \brief A list of chunk renderable things that are ready to upload to the GPU
          */
-        std::queue<std::tuple<std::string, mesh_definition>> chunk_parts_to_upload;
+        std::queue<std::tuple<std::string, mesh_definition>> geometry_to_upload;
 
         /*!
          * \brief Filters describing the bits of geometry to remove next frame

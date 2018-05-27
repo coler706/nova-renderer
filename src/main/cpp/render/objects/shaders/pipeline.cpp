@@ -37,7 +37,7 @@ namespace nova {
         return ret_val;
     }
 
-    pipeline_object make_pipeline(const pipeline& pipeline_create_info, const pass_vulkan_information& renderpass_info, const vk::Device device) {
+    pipeline_object make_pipeline(const pipeline_data& pipeline_create_info, const pass_vulkan_information& renderpass_info, const vk::Device device) {
         LOG(INFO) << "Making VkPipeline for pipeline " << pipeline_create_info.name;
 
         // Creates a pipeline out of compiled shaders
@@ -554,53 +554,5 @@ namespace nova {
             .setStageFlags(stageFlags)
             .setBinding(binding)
             .setPImmutableSamplers(pImmutableSamplers);
-    }
-
-    void pipeline_object::bind_resource(const std::string &descriptor_name, const texture2D *tex) {
-        bound_textures[descriptor_name] = tex;
-    }
-
-    void pipeline_object::commit_bindings(vk::CommandBuffer &buffer, vk::Device device, std::shared_ptr<shader_resource_manager> shader_resources) const {
-        // The descriptors that have nothing bound to them
-        std::vector<vk::WriteDescriptorSet> writes;
-
-        for(const auto& named_binding : resource_bindings) {
-            const auto &name = named_binding.first;
-
-            const auto have_texture_to_bind = bound_textures.find(name) != bound_textures.end();
-            if(!have_texture_to_bind) {
-                LOG(WARNING) << "You don't have anything bound to descriptor " << name << " in pipeline " << this->name;
-                continue;
-            }
-
-            const resource_binding &binding = named_binding.second;
-            const auto &set = descriptors[binding.set];
-
-            auto write_ds_cmd = vk::WriteDescriptorSet()
-                    .setDstSet(set)
-                    .setDstBinding(binding.binding)
-                    .setDstArrayElement(0)
-                    .setDescriptorCount(1);
-
-            const auto tex = bound_textures.at(name);
-
-            const auto image_info = vk::DescriptorImageInfo()
-                    .setImageLayout(tex->get_layout())
-                    .setImageView(tex->get_image_view())
-                    .setSampler(shader_resources->get_point_sampler());
-
-            write_ds_cmd
-                    .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-                    .setPImageInfo(&image_info);
-
-            writes.push_back(write_ds_cmd);
-        }
-
-        device.updateDescriptorSets(writes, {});
-
-        for(const auto named_binding : resource_bindings) {
-            const auto& binding = named_binding.second;
-            buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, binding.set, 1, &descriptors[binding.set], 0, nullptr);
-        }
     }
 }

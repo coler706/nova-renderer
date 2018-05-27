@@ -34,6 +34,8 @@ import java.awt.image.BufferedImage;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -294,7 +296,7 @@ public class NovaRenderer implements IResourceManagerReloadListener {
         Profiler.start("render_gui");
         if (mc.currentScreen != null) {
 
-            NovaDraw.novaDrawScreen(mc.currentScreen, renderPartialTicks);
+            NovaDraw.novaDrawScreen(mc.currentScreen, renderPartialTicks, filterMap);
 
         }
         Profiler.end("render_gui");

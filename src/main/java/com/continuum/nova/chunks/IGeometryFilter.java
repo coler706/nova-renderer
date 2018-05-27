@@ -1,5 +1,6 @@
 package com.continuum.nova.chunks;
 
+import com.continuum.nova.NovaNative;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.util.BlockRenderLayer;
 import org.apache.logging.log4j.LogManager;
@@ -12,22 +13,7 @@ import org.apache.logging.log4j.Logger;
 public interface IGeometryFilter {
     boolean matches(IBlockState blockState);
 
-    enum GeometryType {
-        BLOCK,
-        ENTITY,
-        FALLING_BLOCK,
-        GUI,
-        CLOUD,
-        SKY_DECORATION,
-        SELECTION_BOX,
-        GLINT,
-        WEATHER,
-        HAND,
-        FULLSCREEN_QUAD,
-        PARTICLE,
-        LIT_PARTICLE,
-        EYES
-    }
+    boolean matches(NovaNative.mc_gui_buffer guiBuffer);
 
     class AndGeometryFilter implements IGeometryFilter {
         private IGeometryFilter left;
@@ -41,6 +27,11 @@ public interface IGeometryFilter {
         @Override
         public boolean matches(IBlockState blockState) {
             return left.matches(blockState) && right.matches(blockState);
+        }
+
+        @Override
+        public boolean matches(NovaNative.mc_gui_buffer guiBuffer) {
+            return left.matches(guiBuffer) && right.matches(guiBuffer);
         }
 
         @Override
@@ -64,6 +55,11 @@ public interface IGeometryFilter {
         }
 
         @Override
+        public boolean matches(NovaNative.mc_gui_buffer guiBuffer) {
+            return left.matches(guiBuffer) || right.matches(guiBuffer);
+        }
+
+        @Override
         public String toString() {
             return "(" + left.toString() + " OR " + right.toString() + ")";
         }
@@ -79,6 +75,12 @@ public interface IGeometryFilter {
         @Override
         public boolean matches(IBlockState blockState) {
             return blockState.getBlock().getUnlocalizedName().equals(name);
+        }
+
+        @Override
+        public boolean matches(NovaNative.mc_gui_buffer guiBuffer) {
+            // hardcoded but refactoring the system to unify GUI and regular meshes is hard
+            return name.equals("gui");
         }
 
         @Override
@@ -100,21 +102,38 @@ public interface IGeometryFilter {
         }
 
         @Override
+        public boolean matches(NovaNative.mc_gui_buffer guiBuffer) {
+            return "gui".contains(namePart);
+        }
+
+        @Override
         public String toString() {
             return "name_part::" + namePart;
         }
     }
 
     class GeometryTypeGeometryFilter implements IGeometryFilter {
-        private GeometryType type;
+        private NovaNative.GeometryType type;
 
-        public GeometryTypeGeometryFilter(GeometryType type) {
+        public GeometryTypeGeometryFilter(NovaNative.GeometryType type) {
             this.type = type;
         }
 
         @Override
         public boolean matches(IBlockState blockState) {
-            return type == GeometryType.BLOCK;
+            return type == NovaNative.GeometryType.BLOCK;
+        }
+
+        @Override
+        public boolean matches(NovaNative.mc_gui_buffer guiBuffer) {
+            switch(type) {
+                case GUI:
+                    return guiBuffer.texture_name.contains("gui/");
+                case TEXT:
+                    return guiBuffer.texture_name.contains("font/");
+                default:
+                    return false;
+            }
         }
 
         @Override
@@ -141,6 +160,12 @@ public interface IGeometryFilter {
         }
 
         @Override
+        public boolean matches(NovaNative.mc_gui_buffer guiBuffer) {
+            // GUI uses all sorts of transparent and semi-transparent textures
+            return true;
+        }
+
+        @Override
         public String toString() {
             if(shouldBeTransparent) {
                 return "transparent";
@@ -160,6 +185,12 @@ public interface IGeometryFilter {
         @Override
         public boolean matches(IBlockState blockState) {
             return blockState.getLightValue() > 0 == shouldBeEmissive;
+        }
+
+        @Override
+        public boolean matches(NovaNative.mc_gui_buffer guiBuffer) {
+            // No the GUI can't emit light shut up
+            return false;
         }
 
         @Override
@@ -216,7 +247,7 @@ public interface IGeometryFilter {
     static IGeometryFilter makeFilterFromToken(final String token) {
         if(token.startsWith("geometry_type::")) {
             String typeName = token.substring(15);
-            GeometryType type = GeometryType.valueOf(typeName.toUpperCase());
+            NovaNative.GeometryType type = NovaNative.GeometryType.valueOf(typeName.toUpperCase());
             return new GeometryTypeGeometryFilter(type);
 
         } else if(token.startsWith("name::")) {

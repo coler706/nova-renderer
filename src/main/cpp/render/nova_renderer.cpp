@@ -55,7 +55,7 @@ namespace nova {
         LOG(TRACE) << "Created semaphores";
         context->create_command_pool_and_command_buffers();
         LOG(TRACE) << "Created command pool";
-        context->create_swapchain(game_window->get_size());
+        swapchain = std::make_shared<swapchain_manager>(3, context, game_window->get_size());
         LOG(TRACE) << "Created swapchain";
         context->create_pipeline_cache();
         LOG(TRACE) << "Pipeline cache created";
@@ -114,14 +114,7 @@ namespace nova {
     void nova_renderer::render_frame() {
         begin_frame();
 
-        vk::ResultValue<uint32_t> result = context->device.acquireNextImageKHR(context->swapchain,
-                                                                               std::numeric_limits<uint64_t>::max(),
-                                                                               swapchain_image_acquire_semaphore,
-                                                                               vk::Fence());
-        if (result.result != vk::Result::eSuccess) {
-            LOG(ERROR) << "Could not acquire swapchain image! vkResult: " << result.result;
-        }
-        cur_swapchain_image_index = result.value;
+        swapchain->aqcuire_next_swapchain_image(swapchain_image_acquire_semaphore);
 
         context->device.resetFences({render_done_fence});
 
@@ -136,103 +129,69 @@ namespace nova {
 
         update_nova_ubos();
 
-        vk::ImageMemoryBarrier to_color_attachment_barrier = {};
-        to_color_attachment_barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
-        to_color_attachment_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        to_color_attachment_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        to_color_attachment_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-        to_color_attachment_barrier.subresourceRange.baseMipLevel = 0;
-        to_color_attachment_barrier.subresourceRange.levelCount = 1;
-        to_color_attachment_barrier.subresourceRange.baseArrayLayer = 0;
-        to_color_attachment_barrier.subresourceRange.layerCount = 1;
-
-        // This block seems weirdly hardcoded and not scalable but idk
-        to_color_attachment_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-        to_color_attachment_barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-
-        to_color_attachment_barrier.image = context->swapchain_images[cur_swapchain_image_index];
-        to_color_attachment_barrier.oldLayout = context->swapchain_layout;
-        context->swapchain_layout = vk::ImageLayout::eColorAttachmentOptimal;
-
-        main_command_buffer.buffer.pipelineBarrier(
-                vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                vk::DependencyFlags(),
-                0, nullptr,
-                0, nullptr,
-                1, &to_color_attachment_barrier);
-
         LOG(DEBUG) << "We have " << passes_list.size() << " passes to render";
         for (const auto &pass : passes_list) {
             execute_pass(pass, main_command_buffer.buffer);
         }
 
-        vk::ImageMemoryBarrier barrier = {};
-        barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
+        vk::ImageMemoryBarrier swapchain_barrier = {};
+        swapchain_barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
+        swapchain_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        swapchain_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        swapchain_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+        swapchain_barrier.subresourceRange.baseMipLevel = 0;
+        swapchain_barrier.subresourceRange.levelCount = 1;
+        swapchain_barrier.subresourceRange.baseArrayLayer = 0;
+        swapchain_barrier.subresourceRange.layerCount = 1;
+        swapchain_barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+        swapchain_barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+        swapchain_barrier.image = swapchain->get_current_image();
+        swapchain_barrier.oldLayout = swapchain->get_current_layout();
 
-        // This block seems weirdly hardcoded and not scalable but idk
-        barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-        barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+        swapchain->set_current_layout(vk::ImageLayout::eTransferSrcOptimal);
 
-        barrier.image = context->swapchain_images[cur_swapchain_image_index];
-        barrier.oldLayout = context->swapchain_layout;
-        context->swapchain_layout = vk::ImageLayout::ePresentSrcKHR;
-
+        vk::PipelineStageFlags source_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+        vk::PipelineStageFlags destination_stage = vk::PipelineStageFlagBits::eBottomOfPipe;
         main_command_buffer.buffer.pipelineBarrier(
-                vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                source_stage, destination_stage,
                 vk::DependencyFlags(),
-                0, nullptr,
-                0, nullptr,
-                1, &barrier);
+                {},
+                {},
+                {swapchain_barrier});
 
         main_command_buffer.buffer.end();
 
+        // Submit the command buffer
         vk::Semaphore wait_semaphores[] = {swapchain_image_acquire_semaphore};
         vk::PipelineStageFlags wait_stages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
-        vk::Semaphore signal_semaphores[] = {render_finished_semaphore};
+        std::vector<vk::Semaphore> signal_semaphores = {render_finished_semaphore};
 
-        // TODO: Use the semiphores in render_context
         vk::SubmitInfo submit_info = vk::SubmitInfo()
                 .setCommandBufferCount(1)
                 .setPCommandBuffers(&main_command_buffer.buffer)
                 .setWaitSemaphoreCount(1)
                 .setPWaitSemaphores(wait_semaphores)
                 .setPWaitDstStageMask(wait_stages)
-                .setSignalSemaphoreCount(1)
-                .setPSignalSemaphores(signal_semaphores);
+                .setSignalSemaphoreCount(static_cast<uint32_t>(signal_semaphores.size()))
+                .setPSignalSemaphores(signal_semaphores.data());
 
         context->graphics_queue.submit(1, &submit_info, render_done_fence);
 
-        vk::Result swapchain_result = {};
-
-        vk::PresentInfoKHR present_info = {};
-        present_info.waitSemaphoreCount = 1;
-        present_info.pWaitSemaphores = &render_finished_semaphore;
-        present_info.swapchainCount = 1;
-        present_info.pSwapchains = &context->swapchain;
-        present_info.pImageIndices = &cur_swapchain_image_index;
-        present_info.pResults = &swapchain_result;
-
-        context->present_queue.presentKHR(present_info);
+        swapchain->present_current_image(signal_semaphores);
 
         game_window->end_frame();
 
         auto fence_wait_result = context->device.waitForFences({render_done_fence}, true, std::numeric_limits<uint64_t>::max());
         if (fence_wait_result == vk::Result::eSuccess) {
             // Process geometry updates
+            meshes->remove_gui_render_objects();
             meshes->remove_old_geometry();
             meshes->upload_new_geometry();
 
             context->command_buffer_pool->free(main_command_buffer);
 
         } else {
-            LOG(WARNING) << "Could not wait for gui done fence, " << vk::to_string(fence_wait_result);
+            LOG(WARNING) << "Could not wait for render done fence, " << vk::to_string(fence_wait_result);
         }
 
         LOG(INFO) << "Frame done";
@@ -253,6 +212,11 @@ namespace nova {
 
         const auto& renderpass_for_pass = renderpasses_by_pass.at(pass.name);
 
+        // This block seems weirdly hardcoded and not scalable but idk
+        vk::PipelineStageFlags source_stage = vk::PipelineStageFlagBits::eTopOfPipe;
+        vk::PipelineStageFlags destination_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+        auto barriers = std::vector<vk::ImageMemoryBarrier>();
+
         for(const auto& write_resource : renderpass_for_pass.texture_outputs) {
             // Transition all written to resources to shader write optimal
 
@@ -265,20 +229,8 @@ namespace nova {
             barrier.subresourceRange.levelCount = 1;
             barrier.subresourceRange.baseArrayLayer = 0;
             barrier.subresourceRange.layerCount = 1;
-
-            // This block seems weirdly hardcoded and not scalable but idk
-            vk::PipelineStageFlags source_stage = vk::PipelineStageFlagBits::eTopOfPipe;
-            vk::PipelineStageFlags destination_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
             barrier.srcAccessMask = vk::AccessFlags();
             barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-
-            if (write_resource == "Backbuffer") {
-                barrier.image = context->swapchain_images[cur_swapchain_image_index];
-                barrier.oldLayout = context->swapchain_layout;
-                context->swapchain_layout = vk::ImageLayout::eColorAttachmentOptimal;
-
-                continue;
-            }
 
             try {
                 // heavy handed but I don't have any good debugging tools right now so suck it nerds
@@ -294,20 +246,30 @@ namespace nova {
                 continue;
             }
 
-            buffer.pipelineBarrier(
-                    source_stage, destination_stage,
-                    vk::DependencyFlags(),
-                    0, nullptr,
-                    0, nullptr,
-                    1, &barrier);
+            barriers.push_back(barrier);
         }
 
-        vk::RenderPassBeginInfo begin_final_pass = vk::RenderPassBeginInfo()
+        buffer.pipelineBarrier(
+                source_stage, destination_stage,
+                vk::DependencyFlags(),
+                {}, {}, barriers);
+
+        vk::RenderPassBeginInfo begin_pass = vk::RenderPassBeginInfo()
                 .setRenderPass(renderpass_for_pass.renderpass)
-                .setFramebuffer(renderpass_for_pass.frameBuffer)
                 .setRenderArea({{0, 0}, renderpass_for_pass.framebuffer_size});
 
-        buffer.beginRenderPass(&begin_final_pass, vk::SubpassContents::eInline);
+        vk::Framebuffer framebuffer;
+        if(renderpass_for_pass.texture_outputs[0] == "Backbuffer") {
+            framebuffer = swapchain->get_current_framebuffer();
+
+        } else {
+            framebuffer = renderpass_for_pass.frameBuffer;
+        }
+
+        begin_pass.setFramebuffer(framebuffer);
+        LOG(INFO) << "Using framebuffer " << (VkFramebuffer)framebuffer;
+
+        buffer.beginRenderPass(&begin_pass, vk::SubpassContents::eInline);
 
         auto& pipelines_for_pass = pipelines_by_renderpass.at(pass.name);
         LOG(INFO) << "Processing data in " << pipelines_for_pass.size() << " pipelines";
@@ -335,7 +297,7 @@ namespace nova {
         }
     }
 
-    void nova_renderer::render_all_for_material_pass(const material_pass& pass, vk::CommandBuffer &buffer, pipeline_object &pipeline_data) {
+    void nova_renderer::render_all_for_material_pass(const material_pass& pass, vk::CommandBuffer &buffer, pipeline_object &pipeline) {
         const auto& meshes_for_mat = meshes->get_meshes_for_material(pass.material_name);
         if(meshes_for_mat.empty()) {
             LOG(INFO) << "No meshes available for material " << pass.material_name;
@@ -344,39 +306,26 @@ namespace nova {
 
         LOG(INFO) << "Beginning material " << pass.material_name;
 
-        auto& textures = shader_resources->get_texture_manager();
-        auto& buffers = shader_resources->get_uniform_buffers();
-
         auto per_model_buffer_binding = std::string{};
 
-        // Bind the descriptor sets for this material
+        const auto& pipeline_layout = pipeline.layout;
+
+        // Find the per-model UBO
         for(const auto& binding : pass.bindings) {
-            const auto& descriptor_name = binding.first;
-            const auto& resource_name = binding.second;
-
-            if(textures.is_texture_known(resource_name)) {
-                pipeline_data.bind_resource(descriptor_name, &textures.get_texture(resource_name));
-
-            } else if(buffers.is_buffer_known(resource_name)) {
-                // bind as a buffer
-
-                if(resource_name != "NovaPerModelUBO") {
-                    // Bind dis
-                } else {
-                    // Bind dis later
-                    per_model_buffer_binding = descriptor_name;
-                }
-
-            } else {
-                LOG(ERROR) << "Material " << pass.material_name << " wants to use resource " << resource_name << " for pipeline " << pass.pipeline << " but that resource doesn't exist! Check your spelling";
+            const auto &descriptor_name = binding.first;
+            const auto &resource_name = binding.second;
+            if(resource_name == "NovaPerModelUBO") {
+                // Bind dis later
+                per_model_buffer_binding = descriptor_name;
+                break;
             }
         }
 
-        pipeline_data.commit_bindings(buffer, context->device, shader_resources);
+        buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, pass.descriptor_sets, {});
 
         LOG(INFO) << "Rendering " << meshes_for_mat.size() << " things";
         for(const auto& mesh : meshes_for_mat) {
-            render_mesh(mesh, buffer, pipeline_data, per_model_buffer_binding);
+            render_mesh(mesh, buffer, pipeline, per_model_buffer_binding);
         }
     }
 
@@ -463,10 +412,10 @@ namespace nova {
         auto& textures = shader_resources->get_texture_manager();
 
         LOG(INFO) << "Initializing framebuffer attachments...";
-        textures.create_dynamic_textures(shaderpack.dynamic_textures, passes_list);
+        textures.create_dynamic_textures(shaderpack.dynamic_textures, passes_list, swapchain);
 
         LOG(INFO) << "Building renderpasses and framebuffers...";
-        renderpasses_by_pass = make_passes(shaderpack, textures, context);
+        renderpasses_by_pass = make_passes(shaderpack, textures, context, swapchain);
 
         LOG(INFO) << "Building pipelines and compiling shaders...";
         pipelines_by_renderpass = make_pipelines(shaderpack, renderpasses_by_pass, context);
@@ -474,7 +423,10 @@ namespace nova {
         LOG(INFO) << "Sorting materials...";
         material_passes_by_pipeline = extract_material_passes(shaderpack.materials);
 
-        shader_resources->create_descriptor_sets(pipelines_by_renderpass);
+        shader_resources->create_descriptor_sets(pipelines_by_renderpass, material_passes_by_pipeline);
+
+        // Look for any materials that use a fullscreen pass and insert renderables for them
+        insert_special_geometry(material_passes_by_pipeline);
 
         LOG(INFO) << "Loading complete";
     }
@@ -565,6 +517,7 @@ namespace nova {
         // Luckily I'm coding C++
         switch(renderable.type) {
             case geometry_type::gui:    // Updated separately
+            case geometry_type::text:   // Updated separately
             case geometry_type::block:  // These don't change at runtime and it's fine
                 break;
             default:
@@ -606,6 +559,18 @@ namespace nova {
         auto& allocation = shader_resources->get_uniform_buffers().get_per_model_buffer()->get_allocation_info();
         memcpy(((uint8_t*)allocation.pMappedData) + gui_obj.per_model_buffer_range.offset, &model_matrix, gui_obj.per_model_buffer_range.range);
         LOG(INFO) << "Copied the GUI data to the buffer" << std::endl;
+    }
+
+    void nova_renderer::insert_special_geometry(const std::unordered_map<std::string, std::vector<material_pass>> &material_passes_by_pipeline) {
+        // If the material pass has the fullscreen geometry in its filter, insert it into the mesh store
+        for(const auto& passes_for_pipeline : material_passes_by_pipeline) {
+            for(const material_pass& pass : passes_for_pipeline.second) {
+                const auto& mat = std::find_if(materials.begin(), materials.end(), [&](const material& mat) {return mat.name == pass.material_name;});
+                if((*mat).geometry_filter.find("geometry_type::fullscreen_pass") != std::string::npos) {
+                    meshes->add_fullscreen_quad_for_material((*mat).name);
+                }
+            }
+        }
     }
 }
 

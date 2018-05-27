@@ -22,7 +22,6 @@ namespace nova {
             }
             return vec;
         });
-        depth_input = get_json_value<std::string>(pass_json, "depthInput");
         texture_outputs = get_json_value<std::vector<std::string>>(pass_json, "textureOutputs", [&](const nlohmann::json& texture_outputs_json) {
             auto vec = std::vector<std::string>{};
             for(const auto& val : texture_outputs_json) {
@@ -30,15 +29,16 @@ namespace nova {
             }
             return vec;
         });
-        depth_output = get_json_value<std::string>(pass_json, "depthOutput");
+        depth_texture = get_json_value<std::string>(pass_json, "depthTexture");
     }
 
     texture_resource::texture_resource(const nlohmann::json &json) {
         name = json["name"].get<std::string>();
-        format.pixel_format = pixel_format_enum::from_string(json["format"]);
-        format.dimension_type = texture_dimension_type_enum::from_string(json["dimensionType"]);
-        format.width = json["width"];
-        format.height = json["height"];
+        const auto& format_json = json["format"];
+        format.pixel_format = pixel_format_enum::from_string(format_json["pixelFormat"]);
+        format.dimension_type = texture_dimension_type_enum::from_string(format_json["dimensionType"]);
+        format.width = format_json["width"];
+        format.height = format_json["height"];
     }
 
     bool operator==(const texture_format& rhs, const texture_format& lhs) {

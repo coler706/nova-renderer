@@ -25,6 +25,7 @@ namespace nova {
     entity, \
     falling_block, \
     gui, \
+    text, \
     cloud, \
     sky_decoration, \
     selection_box, \
@@ -42,11 +43,6 @@ namespace nova {
      * This provides a number of values that you can filter things by.
      */
     struct render_object {
-
-        /**********************************************************************************
-         * THIS STRUCT HAS MOVE OPERATORS! BE SURE TO UPDATE THEM WHEN YOU ADD NEW THINGS *
-         **********************************************************************************/
-
         int parent_id;  //!< The ID of the thing that owns us. Could be the ID of a chunk, entity, whatever
 
         geometry_type type;

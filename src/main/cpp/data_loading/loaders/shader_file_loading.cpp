@@ -184,8 +184,8 @@ namespace nova {
      */
     fs::path get_included_file_path(const fs::path &shader_path, const fs::path &included_file_name);
 
-    std::unordered_map<std::string, std::vector<pipeline>> load_pipelines_from_folder(const fs::path &shaderpack_path) {
-        std::vector<pipeline> pipelines = read_pipeline_files(shaderpack_path);
+    std::unordered_map<std::string, std::vector<pipeline_data>> load_pipelines_from_folder(const fs::path &shaderpack_path) {
+        std::vector<pipeline_data> pipelines = read_pipeline_files(shaderpack_path);
         if(pipelines.empty()) {
             LOG(WARNING) << "No pipelines defined by shaderpack. Attempting to guess the intended shaderpack format";
 
@@ -210,7 +210,7 @@ namespace nova {
         auto sources = load_sources_from_folder(shaderpack_path, pipelines);
         LOG(INFO) << "Read all shader sources";
 
-        auto pipelines_by_pass = std::unordered_map<std::string, std::vector<pipeline>>{};
+        auto pipelines_by_pass = std::unordered_map<std::string, std::vector<pipeline_data>>{};
 
         for(auto& pipeline : pipelines) {
             LOG(INFO) << "Trying to get sources for pipeline " << pipeline.name;
@@ -232,7 +232,7 @@ namespace nova {
         return pipelines_by_pass;
     }
 
-    std::vector<pipeline> read_pipeline_files(const fs::path& shaderpack_path) {
+    std::vector<pipeline_data> read_pipeline_files(const fs::path& shaderpack_path) {
         // Nova calls them pipelines, but Bedrock calls them materials. To maintain compatibility Nova loads pipelines
         // from the `materials` folder. Yeah it's kinda gross... but tough
         auto pipelines_path = shaderpack_path / "materials";
@@ -240,11 +240,11 @@ namespace nova {
             LOG(WARNING) << "No pipelines found at path " << pipelines_path << ", returning empty";
             return {};
         }
-        auto pipelines = std::vector<pipeline>{};
+        auto pipelines = std::vector<pipeline_data>{};
         auto pipelines_itr = fs::directory_iterator(pipelines_path);
 
         for(const auto &item : pipelines_itr) {
-            LOG(TRACE) << "Examing file " << item.path();
+            LOG(TRACE) << "Examaning file " << item.path();
             if(item.path().extension() != ".material") {
                 LOG(WARNING) << "Skipping non-pipeline file " << item.path();
                 continue;
@@ -280,7 +280,7 @@ namespace nova {
         return filenames;
     }
 
-    std::unordered_map<std::string, shader_definition> load_sources_from_folder(const fs::path &shaders_path, const std::vector<pipeline> &pipelines) {
+    std::unordered_map<std::string, shader_definition> load_sources_from_folder(const fs::path &shaders_path, const std::vector<pipeline_data> &pipelines) {
         std::unordered_map<std::string, shader_definition> sources;
 
         for(const auto& pipeline : pipelines) {
@@ -445,6 +445,7 @@ namespace nova {
         fs::path resources_path = shaderpack_path / "resources.json";
         if(!fs::exists(resources_path)) {
             // No resources - so let's just early out
+            LOG(ERROR) << "NO resources defined for this shaderpack. That's a problem";
             return {};
         }
 
@@ -452,10 +453,11 @@ namespace nova {
         ss << resources_path;
         auto stringpath = ss.str().substr(1);
         stringpath = stringpath.substr(0, stringpath.size() - 1);
-        auto resoruces_stream = std::ifstream{stringpath};
-        auto resoruces_json = load_json_from_stream(resoruces_stream);
+        auto resources_stream = std::ifstream{stringpath};
+        auto resources_json = load_json_from_stream(resources_stream);
+        LOG(INFO) << "Loaded resources file " << resources_json;
 
-        return parse_textures_from_json(resoruces_json["textures"]);
+        return parse_textures_from_json(resources_json["textures"]);
     }
 
     std::vector<material> load_materials_from_folder(const fs::path& shaderpack_path) {
@@ -469,7 +471,7 @@ namespace nova {
         auto materials_iter = fs::directory_iterator(materials_path);
 
         for(const auto &item : materials_iter) {
-            LOG(TRACE) << "Examing file " << item.path();
+            LOG(TRACE) << "Examaning file " << item.path();
             if(item.path().extension() != ".mat") {
                 LOG(DEBUG) << "Skipping non-material file " << item.path();
                 continue;

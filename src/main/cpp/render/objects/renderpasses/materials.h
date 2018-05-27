@@ -345,7 +345,7 @@ namespace nova {
      * taken straight from the parent, and each field that is present in the child is not changed. That is to say,
      * vectors are NOT combined between the child and parent
      */
-    struct pipeline {
+    struct pipeline_data {
         /*!
          * \brief The name of this pipeline
          */
@@ -537,15 +537,17 @@ namespace nova {
          * \param parent_pass_name The name of the pipeline that this pipeline inherits from
          * \param pass_json The JSON that this pipeline will be created from
          */
-        pipeline(const std::string& pass_name, const optional<std::string>& parent_pass_name, const nlohmann::json& pass_json);
+        pipeline_data(const std::string& pass_name, const optional<std::string>& parent_pass_name, const nlohmann::json& pass_json);
 
-        pipeline() = default;
+        pipeline_data() = default;
     };
 
     struct material_pass {
         std::string material_name;
         std::string pipeline;
         std::unordered_map<std::string, std::string> bindings;
+
+        std::vector<vk::DescriptorSet> descriptor_sets;
 
         explicit material_pass(const nlohmann::json& json);
     };

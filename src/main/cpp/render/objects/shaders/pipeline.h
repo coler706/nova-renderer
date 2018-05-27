@@ -16,7 +16,6 @@
 #include <shaderc/shaderc.hpp>
 #include "../../../utils/export.h"
 #include "../../../data_loading/loaders/shader_source_structs.h"
-#include "../renderpasses/materials.h"
 #include "../../../data_loading/loaders/shader_loading.h"
 #include "../renderpasses/renderpass_builder.h"
 #include "../resources/texture2D.h"
@@ -48,18 +47,8 @@ namespace nova {
         std::unordered_map<uint32_t, vk::DescriptorSetLayout> layouts;
         std::vector<vertex_field_enum> attributes;
 
-        std::vector<vk::DescriptorSet> descriptors;
-
+        std::unordered_map<std::string, const texture2D*> textures_to_bind;
         std::unordered_map<std::string, const texture2D*> bound_textures;
-
-        /*!
-         * \brief Marks
-         * \param descriptor_name
-         * \param tex
-         */
-        void bind_resource(const std::string& descriptor_name, const texture2D* tex);
-
-        void commit_bindings(vk::CommandBuffer &device, vk::Device shader_resources, std::shared_ptr<shader_resource_manager> ptr) const;
     };
 
     std::unordered_map<std::string, std::vector<pipeline_object>> make_pipelines(const shaderpack_data& shaderpack,
@@ -68,7 +57,7 @@ namespace nova {
 
     shader_module create_shader_module(const shader_file& source, const shaderc_shader_kind& stages,  const vk::Device& device);
 
-    pipeline_object make_pipeline(const pipeline& pipeline_create_info, const pass_vulkan_information& renderpass_info, vk::Device device);
+    pipeline_object make_pipeline(const pipeline_data& pipeline_create_info, const pass_vulkan_information& renderpass_info, vk::Device device);
 
     void output_compiled_shader(const shader_file &original_shader_file, const std::vector<uint32_t>& spirv);
 

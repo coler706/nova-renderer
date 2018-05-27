@@ -17,6 +17,7 @@
 #include "objects/shaders/pipeline.h"
 #include "vulkan/command_pool.h"
 #include "objects/resources/texture_manager.h"
+#include "swapchain_manager.h"
 
 namespace nova {
     class vk_shader_program;
@@ -39,7 +40,7 @@ namespace nova {
     class nova_renderer : public iconfig_listener {
     public:
         /*!
-         * \brief A singleton for the nova_renderer instance
+         * \brief A singleton for the nova_renderer instanceA
          *
          * I want only one nova_renderer active at a time, and the C code needs a good way to reference the nova_renderer
          * instance. A singleton fulfils both those requirements.
@@ -128,6 +129,8 @@ namespace nova {
 
         std::shared_ptr<shader_resource_manager> shader_resources;
 
+        std::shared_ptr<swapchain_manager> swapchain;
+
         /*
          * Swapchain bs
          */
@@ -143,7 +146,7 @@ namespace nova {
         std::string loaded_shaderpack_name;
 
         std::vector<render_pass> passes_list;
-        std::unordered_map<std::string, std::vector<pipeline>> pipelines_by_pass;
+        std::unordered_map<std::string, std::vector<pipeline_data>> pipelines_by_pass;
         std::unordered_map<std::string, pass_vulkan_information> renderpasses_by_pass;
         std::unordered_map<std::string, std::vector<pipeline_object>> pipelines_by_renderpass;
         std::vector<material> materials;
@@ -234,6 +237,9 @@ namespace nova {
          * \param renderable The render_object to calculate and upload the model matrix for
          */
         void update_model_matrix(const render_object &renderable);
+
+        void
+    insert_special_geometry(const std::unordered_map<std::string, std::vector<material_pass>> &material_passes_by_pipeline);
     };
 
     std::vector<render_pass> compile_into_list(std::unordered_map<std::string, render_pass> passes);

@@ -21,6 +21,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+set(CMAKE_BUILD_TYPE DEBUG)
 
 set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_LIST_DIR})
 
@@ -121,6 +122,7 @@ set(NOVA_HEADERS
         render/objects/renderpasses/render_passes.h
         render/render_graph.h
         render/objects/meshes/vertex_attributes.h
+        render/swapchain_manager.h
         )
 
 set(NOVA_SOURCE
@@ -173,10 +175,10 @@ set(NOVA_SOURCE
         data_loading/loaders/shader_file_loading.cpp
         render/render_graph.cpp
         render/objects/resources/uniform_buffer.cpp
-        )
+        render/swapchain_manager.cpp)
 
 # SPIRV-Cross doesn't like being an in-source build, meaning I can't easily add it as a dependency to Nova. The
-# instructions are like "yeah just copy over whatever files you want cause that's totally the way modern woftware is
+# instructions are like "yeah just copy over whatever files you want cause that's totally the way modern software is
 # built -_-
 # So here we are,
 set(SPIRV_CROSS_ROOT ${3RD_PARTY_DIR}/SPIRV-Cross)
@@ -202,6 +204,10 @@ endif (UNIX)
 
 
 if(MSVC)
+    if(CMAKE_CXX_FLAGS MATCHES "/Wextra")
+        string(REGEX REPLACE "/Wextra" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    endif()
+
     # Force to always compile with W4
     if(CMAKE_CXX_FLAGS MATCHES "/W[0-4]")
         string(REGEX REPLACE "/W[0-4]" "/W4" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
@@ -254,12 +260,30 @@ endif()
 target_link_libraries(nova-renderer ${COMMON_LINK_LIBS})
 
 if (WIN32)
-    add_custom_command(TARGET nova-renderer
+    if (CMAKE_BUILD_TYPE STREQUAL "Release")
+        add_custom_command(TARGET nova-renderer
             POST_BUILD
-            COMMAND copy /Y "nova-renderer.dll" "..\\..\\..\\jars\\versions\\1.10\\1.10-natives\\")
+            COMMAND copy /Y "nova-renderer.dll" "..\\..\\..\\jars\\versions\\1.10\\1.10-natives")
+    else()
+        add_custom_command(TARGET nova-renderer
+            POST_BUILD
+            COMMAND copy /Y "nova-rendererd.dll" "..\\..\\..\\jars\\versions\\1.10\\1.10-natives")
+        add_custom_command(TARGET nova-renderer
+            POST_BUILD
+            COMMAND move /Y "..\\..\\..\\jars\\versions\\1.10\\1.10-natives\\nova-rendererd.dll" "..\\..\\..\\jars\\versions\\1.10\\1.10-natives\\nova-renderer.dll")
+    endif()
 endif (WIN32)
 if (UNIX)
-    add_custom_command(TARGET nova-renderer
+    if (CMAKE_BUILD_TYPE STREQUAL "Release")
+        add_custom_command(TARGET nova-renderer
             POST_BUILD
-            COMMAND cp -f "${CMAKE_CURRENT_LIST_DIR}/libnova-renderer.so" "${CMAKE_CURRENT_LIST_DIR}/../../../jars/versions/1.10/1.10-natives")
+            COMMAND cp -f "${CMAKE_CURRENT_LIST_DIR}/libnova-renderer.so" "${CMAKE_CURRENT_LIST_DIR}/../../../jars/versions/1.10/1.10-natives/")
+    else()
+        add_custom_command(TARGET nova-renderer
+            POST_BUILD
+            COMMAND cp -f "${CMAKE_CURRENT_LIST_DIR}/libnova-rendererd.so" "${CMAKE_CURRENT_LIST_DIR}/../../../jars/versions/1.10/1.10-natives/")
+        add_custom_command(TARGET nova-renderer
+                POST_BUILD
+                COMMAND mv -uf "${CMAKE_CURRENT_LIST_DIR}/../../../jars/versions/1.10/1.10-natives/libnova-rendererd.so" "${CMAKE_CURRENT_LIST_DIR}/../../../jars/versions/1.10/1.10-natives/libnova-renderer.so")
+    endif()
 endif (UNIX)

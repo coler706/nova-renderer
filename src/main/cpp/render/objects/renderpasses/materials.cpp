@@ -6,9 +6,10 @@
 #include "materials.h"
 #include <easylogging++.h>
 #include "../../utils/utils.h"
+#include "../shaders/pipeline.h"
 
 namespace nova {
-    pipeline::pipeline(const std::string& pass_name, const optional<std::string>& parent_pass_name, const nlohmann::json& pass_json) :
+    pipeline_data::pipeline_data(const std::string& pass_name, const optional<std::string>& parent_pass_name, const nlohmann::json& pass_json) :
             name(pass_name), parent_name(parent_pass_name) {
 
         pass = get_json_value<std::string>(pass_json, "pass");
@@ -124,9 +125,15 @@ namespace nova {
     }
 
     material::material(const nlohmann::json& json) {
-        geometry_filter = get_json_value<std::string>(json, "filter").value();
+        const auto& geometry_filter_opt = get_json_value<std::string>(json, "filter");
+        if(geometry_filter_opt) {
+            geometry_filter = geometry_filter_opt.value();
 
-        passes = get_json_value<std::vector<material_pass>>(json, "passes", [&](const nlohmann::json& passes_json) {
+        } else {
+            LOG(ERROR) << "Material does not define any filters";
+        }
+
+        const auto& passes_opt = get_json_value<std::vector<material_pass>>(json, "passes", [&](const nlohmann::json& passes_json) {
             auto vec = std::vector<material_pass>{};
 
             for(const auto& pass_json : passes_json) {
@@ -134,7 +141,14 @@ namespace nova {
             }
 
             return vec;
-        }).value();
+        });
+
+        if(passes_opt) {
+            passes = passes_opt.value();
+
+        } else {
+            LOG(ERROR) << "Material does not define any passes";
+        }
     }
 
     material_pass::material_pass(const nlohmann::json &json) {
